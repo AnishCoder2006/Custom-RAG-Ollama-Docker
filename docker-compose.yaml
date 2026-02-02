@@ -1,0 +1,74 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: rag-chroma
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: rag-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  fastapi-backend:
+    build:
+      context: ./data/backend
+      dockerfile: Dockerfile
+    container_name: rag-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./data/backend/app:/app/app
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=llama3.2:3b
+      - EMBEDDING_MODEL=nomic-embed-text
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - ollama
+      - chroma
+      - redis
+    restart: unless-stopped
+
+  streamlit-frontend:
+    build:
+      context: ./data/frontend
+      dockerfile: Dockerfile
+    container_name: rag-frontend
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data/frontend/app:/app/app
+    environment:
+      - FASTAPI_URL=http://fastapi-backend:8000
+      - STREAMLIT_SERVER_HEADLESS=true
+    depends_on:
+      - fastapi-backend
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
+  chroma-data:
+  redis-data:
